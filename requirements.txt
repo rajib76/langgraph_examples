@@ -1,3 +1,4 @@
 langgraph
 python-dotenv
 langchain_openai
+simplememory

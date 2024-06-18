@@ -5,11 +5,12 @@ import os
 from typing import TypedDict, Annotated, Sequence, List
 
 from dotenv import load_dotenv
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AnyMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_openai import ChatOpenAI
+from langchain_openai import OpenAI, ChatOpenAI
 from langgraph.constants import END
-from langgraph.graph import StateGraph
+from langgraph.graph import add_messages, StateGraph, MessageGraph
+from memory.semantic_memory import SemanticMemory
 from pydantic.v1 import BaseModel
 
 # Getting the Open AI API key
@@ -65,19 +66,30 @@ class ReflectionAgent(BaseModel):
         messages = reflect.invoke({"messages": [original_question + answer]})
         return {"messages":[messages.content]}
 
+    def add_to_memory(self, state: State):
+        original_question = state["messages"][0]
+        answer = state["messages"][-1]
+        sc = SemanticMemory()
+        semantic_val, memory_item = sc.add_memory_item(mem_key=str(original_question),
+                                                       mem_val=str(answer))
+
+        return {"messages":[memory_item]}
+
     def should_continue(self, state: List[BaseMessage]):
         if len(state["messages"]) > 8:
             # End after 4 iterations
-            return END
+            return "add_to_memory"
         return "critique_agent"
 
     def make_workflow(self):
         graph_builder = StateGraph(State)
         graph_builder.add_node("generate_agent", self.generate_answer)
         graph_builder.add_node("critique_agent", self.critique_answer)
+        graph_builder.add_node("add_to_memory", self.add_to_memory)
         graph_builder.set_entry_point("generate_agent")
         graph_builder.add_conditional_edges("generate_agent", self.should_continue)
         graph_builder.add_edge("critique_agent", "generate_agent")
+        graph_builder.set_finish_point("add_to_memory")
 
         graph = graph_builder.compile()
 
